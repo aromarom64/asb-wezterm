@@ -31,10 +31,12 @@ apt-get install --no-install-recommends ./asb-wezterm_<build>_arm64.deb
 ## Releases
 
 Each release is tagged with the upstream build string and has one asset, the
-deb. Releases are immutable (GitHub's immutable releases are on for this
-repository): once published, a release's tag and asset never change, and no
-build is ever re-uploaded. A rebuild of the same commit gives different bytes,
-so a sha256 pin on a release holds only because its asset never changes.
+deb. The tag is a commit of this repository whose `scripts/` are the build
+scripts that built it. Releases are immutable (GitHub's immutable releases are
+on for this repository): once published, a release's tag and asset never
+change, and no build is ever re-uploaded. A rebuild of the same commit gives
+different bytes, so a sha256 pin on a release holds only because its asset
+never changes.
 
 Each release's notes record:
 
@@ -42,6 +44,7 @@ Each release's notes record:
 - the mux codec
 - the Rust version
 - the crates whose C libraries are linked in statically
+- the number of third-party Rust crates, whose license texts the deb ships
 - the build VM's CPUs and memory, the cargo wall time and the peak VM memory
 - the agent-sandbox commit the build scripts came from
 - the deb's sha256
@@ -61,7 +64,8 @@ shasum -a 256 asb-wezterm_<build>_arm64.deb
 build VM. They need an Apple silicon Mac with Apple's
 [`container`](https://github.com/apple/container) CLI, plus `curl`, `git` and
 `shasum`, and network access to GitHub, the Ubuntu archive,
-static.rust-lang.org and crates.io. Run them from a git checkout:
+static.rust-lang.org and crates.io, with the `container` service running.
+Run them from a git checkout:
 
 ```
 BUILD=20261026-082628-e68a8ec2 sh scripts/wezterm-deb.sh
@@ -70,7 +74,9 @@ BUILD=20261026-082628-e68a8ec2 sh scripts/wezterm-deb.sh
 Environment variables:
 
 - `BUILD`: the upstream build string; defaults to the host's `wezterm --version`.
-  Its commit must be on upstream `main`.
+  Its commit must be on upstream `main`, and its date and time must be that
+  commit's committer date at the committer's own UTC offset, as upstream's
+  build string has it.
 - `CPUS`: the build VM's CPUs (default `6`)
 - `MEMORY`: the build VM's memory (default `8g`)
 - `DNS`: an IP address both VMs use as their DNS server, for a network whose
@@ -81,10 +87,12 @@ The driver downloads the upstream source tarball of that commit into
 VM with the Rust version pinned in `wezterm-deb-vm.sh`, checks the binaries'
 version and mux codec, packages the deb, installs it on a second clean
 `ubuntu:24.04` VM, and only then writes the deb's `.sha256` and `notes.md`
-beside it. The `agent-sandbox commit` line in `notes.md` names the HEAD of
-the checkout the scripts ran from, with `dirty` appended when it had
-uncommitted changes. At the defaults a build takes about four minutes, two of
-them in cargo, and peaks under 2 GiB of VM memory.
+beside it. The build VM sees that directory read-only and writes only into an
+empty `build/` inside it, which the driver accepts only when it holds the deb
+and a `build-info` file as regular files. The `agent-sandbox commit` line in
+`notes.md` names the HEAD of the checkout the scripts ran from, with `dirty`
+appended when it had uncommitted changes. At the defaults a build takes about
+four minutes, two of them in cargo, and peaks under 2 GiB of VM memory.
 
 ## Licenses
 
@@ -117,3 +125,19 @@ license offers MIT, is followed by the MIT License text. The file sits outside
 changelog files on install.
 
 The build scripts in `scripts/` are MIT licensed (see `LICENSE`).
+
+## Source
+
+Every release is built from public sources, which its notes and Cargo.lock
+pin:
+
+- wezterm: the upstream source tarball whose URL and sha256 the release notes
+  give; its `Cargo.lock` pins every crates.io crate by the sha256 of its
+  `.crate` file.
+- the statically linked C libraries: the crates.io crates of the table
+  above, at the versions the deb's `copyright` file names (for
+  `20261026-082628-e68a8ec2`, libssh is `libssh-rs-sys` 0.2.8, `.crate`
+  sha256 `568b2319d54c0d9094ba4bd1701eae2aedfa3739e18019f0d5c7dc4dc20dc033`,
+  whose `vendored/` directory is libssh's source).
+- the build: `scripts/` at the release's tag, which rebuilds both binaries,
+  and so relinks them, from those sources.
